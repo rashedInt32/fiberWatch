@@ -1,0 +1,22 @@
+{
+  "name": "api",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun --watch src/main.ts",
+    "start": "bun src/main.ts",
+    "check-types": "tsc --noEmit",
+    "prepare": "effect-language-service patch"
+  },
+  "dependencies": {
+    "effect": "catalog:",
+    "@effect/platform-bun": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/language-service": "catalog:",
+    "@repo/typescript-config": "workspace:*",
+    "@types/bun": "latest",
+    "typescript": "5.9.2"
+  }
+}

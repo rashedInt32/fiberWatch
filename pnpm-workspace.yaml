@@ -1,3 +1,11 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# Single source of truth for Effect package versions across the monorepo.
+# Referenced from package.json as "effect": "catalog:" etc.
+# Pinned exactly because v4 betas may break between releases.
+catalog:
+  effect: 4.0.0-beta.75
+  "@effect/platform-bun": 4.0.0-beta.75
+  "@effect/language-service": 0.86.2
