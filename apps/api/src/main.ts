@@ -1,39 +1,75 @@
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun";
-import { Layer, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
+import { HttpRouter } from "effect/unstable/http";
 import {
-  HttpMiddleware,
-  HttpRouter,
-  HttpServerResponse,
-} from "effect/unstable/http";
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi";
+  HttpApi,
+  HttpApiBuilder,
+  HttpApiEndpoint,
+  HttpApiError,
+  HttpApiGroup,
+  OpenApi,
+} from "effect/unstable/httpapi";
 
-// In Effect v4 each route is a Layer produced by HttpRouter.add(method, path, handler).
-// Handlers may be a plain HttpServerResponse or an Effect that yields one.
-const HomeRoute = HttpRouter.add(
-  "GET",
-  "/",
-  HttpServerResponse.text("fiberWatch api"),
-);
-
-const HealthRoute = HttpRouter.add(
-  "GET",
-  "/health",
-  HttpServerResponse.json({ status: "ok" }),
-);
-
-const UserLoginSchema = Schema.Struct({
+export class User extends Schema.Class<User>("User")({
+  id: Schema.String,
+  name: Schema.String,
   email: Schema.String,
-  password: Schema.String,
+}) {}
+
+export class UserNotFound extends Schema.TaggedErrorClass<UserNotFound>()(
+  "UserNotFound",
+  { userId: Schema.String },
+  {
+    httpApiStatus: 404,
+  },
+) {}
+
+export const getUser = HttpApiEndpoint.get("getUser", "/:id", {
+  params: { id: Schema.String },
+  success: User,
+  error: [UserNotFound, HttpApiError.NotFound],
 });
 
-const AuthApiGroup = HttpApiGroup.make("auth").add(
-  HttpApiEndpoint.post("login", "/login").success(Schema.String),
+export const createUser = HttpApiEndpoint.post("createUser", "/create", {
+  payload: User,
+  success: User,
+  error: [HttpApiError.Forbidden],
+});
+
+export const userGroup = HttpApiGroup.make("users")
+  .add(getUser, createUser)
+  .prefix("/users")
+  .annotate(OpenApi.Description, "User Management");
+
+export const api = HttpApi.make("MyApi")
+  .add(userGroup)
+  .prefix("/api")
+  .annotateMerge(
+    OpenApi.annotations({
+      title: "My Api",
+      version: "1.0.0",
+      description: "Users Service",
+    }),
+  );
+
+export const UsersLive = HttpApiBuilder.group(api, "users", (handlers) =>
+  handlers
+    .handle("getUser", ({ params }) =>
+      Effect.succeed(
+        new User({ id: params.id, name: "Ada", email: "ada@example.com" }),
+      ),
+    )
+    .handle("createUser", ({ payload }) =>
+      Effect.succeed(
+        new User({ id: "1", name: payload.name, email: payload.email }),
+      ),
+    ),
 );
 
-// Combine the route layers, serve them (with request logging), and back the
-// server with the Bun runtime on port 3001 (the dashboard owns 3000).
-const HttpLive = HttpRouter.serve(Layer.mergeAll(HomeRoute, HealthRoute), {
-  middleware: HttpMiddleware.logger,
-}).pipe(Layer.provide(BunHttpServer.layer({ port: 3001 })));
+export const AppLive = HttpApiBuilder.layer(api).pipe(Layer.provide(UsersLive));
 
-BunRuntime.runMain(Layer.launch(HttpLive));
+const BunServerLive = HttpRouter.serve(AppLive).pipe(
+  Layer.provide(BunHttpServer.layer({ port: 3002 })),
+);
+
+BunRuntime.runMain(Layer.launch(BunServerLive));
