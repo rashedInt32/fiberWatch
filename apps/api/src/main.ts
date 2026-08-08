@@ -9,6 +9,7 @@ import {
   HttpApiGroup,
   OpenApi,
 } from "effect/unstable/httpapi";
+import { InvalidTargets, probe, ProbeReport } from "./probe";
 
 export class User extends Schema.Class<User>("User")({
   id: Schema.String,
@@ -23,6 +24,12 @@ export class UserNotFound extends Schema.TaggedErrorClass<UserNotFound>()(
     httpApiStatus: 404,
   },
 ) {}
+
+export const runProbe = HttpApiEndpoint.post("runProbe", "/run", {
+  payload: Schema.Union([Schema.Array(Schema.String), Schema.String]),
+  success: ProbeReport,
+  error: [InvalidTargets],
+});
 
 export const getUser = HttpApiEndpoint.get("getUser", "/:id", {
   params: { id: Schema.String },
@@ -41,8 +48,12 @@ export const userGroup = HttpApiGroup.make("users")
   .prefix("/users")
   .annotate(OpenApi.Description, "User Management");
 
+export const ProbeGroup = HttpApiGroup.make("probe")
+  .add(runProbe)
+  .prefix("/probe");
+
 export const api = HttpApi.make("MyApi")
-  .add(userGroup)
+  .add(userGroup, ProbeGroup)
   .prefix("/api")
   .annotateMerge(
     OpenApi.annotations({
@@ -66,7 +77,14 @@ export const UsersLive = HttpApiBuilder.group(api, "users", (handlers) =>
     ),
 );
 
-export const AppLive = HttpApiBuilder.layer(api).pipe(Layer.provide(UsersLive));
+export const ProbeLive = HttpApiBuilder.group(api, "probe", (handlers) =>
+  handlers.handle("runProbe", ({ payload }) => probe(payload)),
+);
+
+export const AppLive = HttpApiBuilder.layer(api).pipe(
+  Layer.provide(UsersLive),
+  Layer.provide(ProbeLive),
+);
 
 const BunServerLive = HttpRouter.serve(AppLive).pipe(
   Layer.provide(BunHttpServer.layer({ port: 3002 })),

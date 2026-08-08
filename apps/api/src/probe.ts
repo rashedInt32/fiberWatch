@@ -1,38 +1,41 @@
 import { Array, Effect, Schema } from "effect";
 import { Input } from "effect/Duration";
 
-type EndpointResult = {
-  url: string;
-  status: "up" | "down";
-  statusCode: number | undefined;
-  responseTime: number | undefined;
-  message?: string;
-};
+export class EndpointResult extends Schema.Class<EndpointResult>(
+  "EndpointResult",
+)({
+  url: Schema.String,
+  status: Schema.Literals(["up", "down"]),
+  statusCode: Schema.Union([Schema.Number, Schema.Undefined]),
+  responseTime: Schema.Union([Schema.Number, Schema.Undefined]),
+  message: Schema.optional(Schema.String),
+}) {}
 
-type ProbeReport = {
-  results: EndpointResult[];
-  total: number;
-  up: number;
-  down: number;
-};
+export class ProbeReport extends Schema.Class<ProbeReport>("ProbeReport")({
+  results: Schema.Array(EndpointResult),
+  total: Schema.Number,
+  up: Schema.Number,
+  down: Schema.Number,
+}) {}
 
-type ProbeOptions = {
+export type ProbeOptions = {
   timeout?: Input;
 };
 
-class InvalidTargets extends Schema.TaggedErrorClass<InvalidTargets>()(
+export class InvalidTargets extends Schema.TaggedErrorClass<InvalidTargets>()(
   "InvalidTargets",
   {
     message: Schema.String,
   },
+  { httpApiStatus: 400 },
 ) {}
 
-const probe = (
-  targets: string | string[],
+export const probe = (
+  targets: string | readonly string[],
   options?: ProbeOptions,
 ): Effect.Effect<ProbeReport, InvalidTargets> =>
   Effect.gen(function* () {
-    const urls = Array.isArray(targets) ? targets : [targets];
+    const urls = typeof targets === "string" ? [targets] : targets;
     if (urls.length === 0 || urls.some((u) => u.trim() === "")) {
       return yield* new InvalidTargets({
         message: "Url is either empty or missing",
@@ -47,12 +50,12 @@ const probe = (
     const up = results.filter((r) => r.status === "up").length;
     const down = results.filter((r) => r.status === "down").length;
 
-    return {
+    return new ProbeReport({
       results,
       up,
       down,
       total: results.length,
-    };
+    });
   });
 
 const probeImpl = (
@@ -67,38 +70,26 @@ const probeImpl = (
     });
 
     const end = new Date();
-    return {
+    return new EndpointResult({
       url,
       status: response.ok ? "up" : "down",
       statusCode: response.status,
       responseTime: end.getTime() - start.getTime(),
-    } satisfies EndpointResult;
+    });
   }).pipe(
     Effect.timeout(timeout),
     Effect.catch((error) =>
-      Effect.succeed({
-        url,
-        status: "down",
-        statusCode: undefined,
-        responseTime: undefined,
-        message: String(error),
-      } satisfies EndpointResult),
+      Effect.succeed(
+        new EndpointResult({
+          url,
+          status: "down",
+          statusCode: undefined,
+          responseTime: undefined,
+          message: String(error),
+        }),
+      ),
     ),
   );
-
-const report = await Effect.runPromise(
-  probe(
-    [
-      "https://example.com",
-      "https://github.com",
-      "https://cloudflare.com",
-      "https://wikipedia.org",
-      "https://mozilla.org",
-    ],
-    { timeout: "1 second" },
-  ),
-).then(console.log);
-//console.log(report.total, `${Date.now() - t}ms`);
 
 // Step1: Check url is present
 // Step2: store the time before fetch call
