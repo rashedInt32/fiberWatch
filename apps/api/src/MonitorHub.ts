@@ -1,5 +1,5 @@
-import { Context, Effect, Layer, PubSub, Scope } from "effect";
-import { EndpointResult } from "./probe";
+import { Context, Effect, Layer, PubSub, Schedule, Scope } from "effect";
+import { EndpointResult, probe } from "./probe";
 
 interface MonitorHubInt {
   publish: (event: EndpointResult) => Effect.Effect<void>;
@@ -24,3 +24,10 @@ export const MonitorHubLive = Layer.effect(
     };
   }),
 );
+
+export const MonitorLoop = (urls: string[]) =>
+  Effect.gen(function* () {
+    const hub = yield* MonitorHub;
+    const report = yield* probe(urls);
+    yield* Effect.forEach(report.results, (r) => hub.publish(r));
+  }).pipe(Effect.repeat(Schedule.spaced("10 seconds")));
