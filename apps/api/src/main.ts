@@ -10,6 +10,7 @@ import {
   OpenApi,
 } from "effect/unstable/httpapi";
 import { InvalidTargets, probe, ProbeReport } from "./probe";
+import { handleStream, MonitorHubLive, MonitorLoop } from "./MonitorHub";
 
 export class User extends Schema.Class<User>("User")({
   id: Schema.String,
@@ -52,6 +53,11 @@ export const ProbeGroup = HttpApiGroup.make("probe")
   .add(runProbe)
   .prefix("/probe");
 
+export const SubsCribeProps = HttpRouter.add(
+  "GET",
+  "/api/monitor/stream",
+  handleStream,
+);
 export const api = HttpApi.make("MyApi")
   .add(userGroup, ProbeGroup)
   .prefix("/api")
@@ -86,8 +92,16 @@ export const AppLive = HttpApiBuilder.layer(api).pipe(
   Layer.provide(ProbeLive),
 );
 
-const BunServerLive = HttpRouter.serve(AppLive).pipe(
+const MonitorLoopLive = Layer.effectDiscard(
+  Effect.forkScoped(MonitorLoop(["http//:example.com"])),
+);
+
+const MainLayer = Layer.mergeAll(AppLive, SubsCribeProps, MonitorLoopLive);
+
+const BunServerLive = HttpRouter.serve(MainLayer).pipe(
   Layer.provide(BunHttpServer.layer({ port: 3002 })),
 );
 
-BunRuntime.runMain(Layer.launch(BunServerLive));
+BunRuntime.runMain(
+  Layer.launch(BunServerLive).pipe(Effect.provide(MonitorHubLive)),
+);
